@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Claude Code 使用量グラフ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+body { font-family: sans-serif; background: #1a1a2e; color: #eee; margin: 20px; }
+h1 { text-align: center; font-size: 1.3em; }
+.chart-box { background: #16213e; border-radius: 8px; padding: 16px; margin: 16px 0; max-width: 900px; margin-left: auto; margin-right: auto; }
+.chart-box h2 { font-size: 0.95em; margin: 0 0 8px; color: #a8b2d1; }
+canvas { width: 100% !important; }
+.summary { text-align: center; color: #a8b2d1; font-size: 0.85em; margin-top: 8px; }
+button { background: #0f3460; color: #eee; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px; }
+button:hover { background: #1a5276; }
+.controls { text-align: center; margin: 12px 0; }
+</style>
+</head>
+<body>
+<h1>Claude Code 使用量ダッシュボード</h1>
+<div class="controls">
+  <button onclick="loadFromFile()">stats-cache.json を読み込む</button>
+  <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFile(event)">
+</div>
+<div class="summary" id="summary"></div>
+
+<div class="chart-box"><h2>日別メッセージ数</h2><canvas id="msgChart"></canvas></div>
+<div class="chart-box"><h2>日別トークン数 (モデル別)</h2><canvas id="tokenChart"></canvas></div>
+<div class="chart-box"><h2>日別セッション数</h2><canvas id="sessionChart"></canvas></div>
+<div class="chart-box"><h2>日別ツールコール数</h2><canvas id="toolChart"></canvas></div>
+<div class="chart-box"><h2>時間帯別セッション開始数</h2><canvas id="hourChart"></canvas></div>
+
+<script>
+let charts = {};
+
+function render(data) {
+  const daily = data.dailyActivity || [];
+  const tokens = data.dailyModelTokens || [];
+  const hours = data.hourCounts || {};
+
+  // Summary
+  document.getElementById('summary').textContent =
+    `総セッション: ${data.totalSessions || 0} | 総メッセージ: ${data.totalMessages || 0} | 初回: ${(data.firstSessionDate || '').slice(0,10)}`;
+
+  const labels = daily.map(d => d.date.slice(5)); // MM-DD
+
+  // Destroy old charts
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  const common = { responsive: true, plugins: { legend: { labels: { color: '#a8b2d1' } } },
+    scales: { x: { ticks: { color: '#a8b2d1', maxRotation: 45 }, grid: { color: '#233554' } },
+              y: { ticks: { color: '#a8b2d1' }, grid: { color: '#233554' }, beginAtZero: true } } };
+
+  // Messages
+  charts.msg = new Chart(document.getElementById('msgChart'), {
+    type: 'line', data: { labels, datasets: [{
+      label: 'メッセージ数', data: daily.map(d => d.messageCount),
+      borderColor: '#e94560', backgroundColor: 'rgba(233,69,96,0.15)', fill: true, tension: 0.3
+    }]}, options: common
+  });
+
+  // Tokens by model
+  const allModels = new Set();
+  tokens.forEach(d => Object.keys(d.tokensByModel).forEach(m => allModels.add(m)));
+  const modelColors = { 'claude-sonnet-4-5-20250929': '#00d2ff', 'claude-opus-4-5-20251101': '#f9a825', 'claude-opus-4-6': '#76ff03' };
+  const tokenLabels = tokens.map(d => d.date.slice(5));
+  const tokenDatasets = [...allModels].map(model => ({
+    label: model.replace('claude-','').replace(/-\d{8}$/,''),
+    data: tokens.map(d => (d.tokensByModel[model] || 0)),
+    borderColor: modelColors[model] || '#ccc',
+    backgroundColor: 'transparent', tension: 0.3
+  }));
+  charts.token = new Chart(document.getElementById('tokenChart'), {
+    type: 'line', data: { labels: tokenLabels, datasets: tokenDatasets }, options: common
+  });
+
+  // Sessions
+  charts.session = new Chart(document.getElementById('sessionChart'), {
+    type: 'line', data: { labels, datasets: [{
+      label: 'セッション数', data: daily.map(d => d.sessionCount),
+      borderColor: '#00d2ff', backgroundColor: 'rgba(0,210,255,0.15)', fill: true, tension: 0.3
+    }]}, options: common
+  });
+
+  // Tool calls
+  charts.tool = new Chart(document.getElementById('toolChart'), {
+    type: 'line', data: { labels, datasets: [{
+      label: 'ツールコール数', data: daily.map(d => d.toolCallCount),
+      borderColor: '#f9a825', backgroundColor: 'rgba(249,168,37,0.15)', fill: true, tension: 0.3
+    }]}, options: common
+  });
+
+  // Hour distribution
+  const hourLabels = Array.from({length:24}, (_,i) => `${i}時`);
+  const hourData = hourLabels.map((_,i) => hours[i] || 0);
+  charts.hour = new Chart(document.getElementById('hourChart'), {
+    type: 'bar', data: { labels: hourLabels, datasets: [{
+      label: 'セッション開始数', data: hourData,
+      backgroundColor: 'rgba(118,255,3,0.6)', borderColor: '#76ff03', borderWidth: 1
+    }]}, options: common
+  });
+}
+
+function loadFromFile() { document.getElementById('fileInput').click(); }
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => { try { render(JSON.parse(ev.target.result)); } catch(err) { alert('JSONの解析に失敗: ' + err.message); } };
+  reader.readAsText(file);
+}
+
+// No embedded data — use the file picker button above to load your stats-cache.json
+const EMBEDDED_DATA = null;
+if (EMBEDDED_DATA) render(EMBEDDED_DATA);
+</script>
+</body>
+</html>

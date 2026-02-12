@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Screenshots (keep directory, ignore actual images unless committed)
+screenshots/*.png
+screenshots/*.jpg
+screenshots/*.gif
+!screenshots/.gitkeep
